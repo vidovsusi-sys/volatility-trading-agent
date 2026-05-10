@@ -54,7 +54,7 @@ def main():
 
     # Download benchmarks
     benchmarks = download_prices(BENCHMARKS, start=START_DATE)
-    benchmarks.columns = ["VIX", "SP500"]
+    benchmarks.columns = ["SP500", "VIX"]
     validate_data(benchmarks, "Benchmarks")
     save_data(benchmarks, "benchmarks.csv")
 
