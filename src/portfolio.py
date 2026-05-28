@@ -20,6 +20,7 @@ from scipy.optimize import minimize
 # ── Configuration ──────────────────────────────────────────────────────────
 TICKERS = ["CRM", "VZ", "WMT", "INTC", "UNH", "MRK", "BA", "NKE", "CVX", "AMGN"]
 PROCESSED_PATH = Path("data/processed")
+RAW_PATH = Path("data/raw")
 
 # Constraints on portfolio weights
 MIN_WEIGHT = 0.05    # 5% minimum per stock
@@ -241,6 +242,27 @@ def load_historical_betas():
     print(f"  std_B2 range: [{std_b2.min():.4f}, {std_b2.max():.4f}]")
 
     return std_b0, std_b1, std_b2
+def load_prices():
+    """
+    Load daily close prices for the 10 stocks.
+
+    Used by Method C to compute momentum signals. Prices are the raw
+    inputs stored in data/raw/prices.csv.
+
+    Returns:
+        prices: DataFrame (Date x TICKERS) with daily close prices.
+    """
+    path = RAW_PATH / "prices.csv"
+    prices = pd.read_csv(path, index_col=0, parse_dates=True)
+
+    # Keep only the 10 stocks we use (drop VIX/S&P500 if present)
+    prices = prices[TICKERS]
+
+    print(f"Loaded prices — Shape: {prices.shape}")
+    print(f"From: {prices.index.min().date()} To: {prices.index.max().date()}")
+
+    return prices
+
 
 def method_b_shape_trading(b0_forecast, b1_forecast, b2_forecast,
                             std_b0, std_b1, std_b2):
@@ -295,6 +317,63 @@ def method_b_shape_trading(b0_forecast, b1_forecast, b2_forecast,
     print(weights.sum(axis=1).describe())
 
     return weights
+
+def method_c_momentum(prices, b0_forecast, lookback=63):
+    """
+    Compute Method C weights combining momentum with predicted volatility.
+
+    The score rewards stocks that are trending up AND have low predicted
+    volatility:
+      momentum_i = (price_today - price_lookback_ago) / price_lookback_ago
+      score_i    = momentum_i / B0_i_forecast
+      weight_i   = max(score_i, 0) / sum_j( max(score_j, 0) )
+
+    Stocks with negative momentum receive zero weight (long-only winners).
+    This does not contradict the unpredictability of returns: we use past
+    return as a medium-term trend signal, not as a next-day forecast.
+
+    Args:
+        prices: DataFrame (Date x TICKERS) with daily close prices.
+        b0_forecast: DataFrame (Date x TICKERS) with forecasted B0.
+        lookback: momentum window in trading days (default 63 = 1 quarter).
+
+    Returns:
+        weights: DataFrame (Date x TICKERS) where each row sums to 1.
+    """
+    # SAFETY: replace non-positive B0 with the per-stock median.
+    b0_clean = b0_forecast.where(b0_forecast > 0)
+    b0_clean = b0_clean.fillna(b0_clean.median())
+
+    # Compute 63-day momentum: (P_t - P_{t-63}) / P_{t-63}
+    momentum = prices.pct_change(periods=lookback)
+
+    # Align momentum to the forecast dates (forecasts start at 2018)
+    momentum = momentum.reindex(b0_clean.index)
+
+    # Score: momentum scaled by predicted volatility
+    score = momentum / b0_clean
+
+    # Long-only: negative scores become zero
+    score_pos = score.clip(lower=0)
+
+    # Normalize per row. Handle days where all scores are zero
+    # (no stock has positive momentum) by falling back to equal weights.
+    row_sums = score_pos.sum(axis=1)
+    weights = score_pos.div(row_sums, axis=0)
+
+    # Fallback to equal weights on all-zero days
+    n = len(TICKERS)
+    all_zero_days = row_sums == 0
+    weights.loc[all_zero_days] = 1.0 / n
+
+    print(f"Method C weights computed — Shape: {weights.shape}")
+    print(f"Days with all-zero momentum (equal-weight fallback): "
+          f"{all_zero_days.sum()}")
+    print(f"Row sums (should be ~1.0):")
+    print(weights.sum(axis=1).describe())
+
+    return weights
+
 # ── Main orchestration ─────────────────────────────────────────────────────
 def compute_method_a(model="xgboost"):
     """
@@ -368,8 +447,43 @@ def compute_method_b(model="xgboost"):
 
     return w
 
+def compute_method_c(model="xgboost"):
+    """
+    Full pipeline for Method C (Momentum):
+      1. Load prices (for momentum) and forecasts (for predicted vol).
+      2. Compute raw momentum-based weights.
+      3. Apply min/max constraints via scipy QP.
+      4. Save final weights to data/processed/weights_method_c_{model}.csv.
+
+    Args:
+        model: "xgboost" or "arma".
+
+    Returns:
+        DataFrame of constrained weights.
+    """
+    print(f"\n{'='*60}")
+    print(f"METHOD C — Momentum with {model.upper()} forecasts")
+    print(f"{'='*60}\n")
+
+    # Step 1: load prices and forecasts
+    prices = load_prices()
+    b0, _, _ = load_forecasts(model=model)
+
+    # Step 2: compute raw momentum weights
+    w_raw = method_c_momentum(prices, b0)
+
+    # Step 3: apply constraints via scipy
+    w = apply_constraints(w_raw)
+
+    # Step 4: save to CSV
+    output_path = PROCESSED_PATH / f"weights_method_c_{model}.csv"
+    w.to_csv(output_path)
+    print(f"\nSaved: {output_path}")
+
+    return w
+
 def main():
-    """Entry point: run Methods A and B for available forecast models."""
+    """Entry point: run Methods A, B and C for available forecast models."""
     # ── Method A (Risk Parity) ─────────────────────────────────────────
     # Run for XGBoost forecasts (primary model)
     compute_method_a(model="xgboost")
@@ -377,6 +491,10 @@ def main():
     # ── Method B (Shape Trading) ───────────────────────────────────────
     # Run for XGBoost forecasts (primary model)
     compute_method_b(model="xgboost")
+
+    # ── Method C (Momentum) ────────────────────────────────────────────
+    # Run for XGBoost forecasts (primary model)
+    compute_method_c(model="xgboost")
 
     # Run for ARMA forecasts (benchmark used for RQ1)
     # NOTE: at the time of writing, predictions_arma.csv contains only NaN
@@ -387,3 +505,6 @@ def main():
           "Re-enable once forecasting.py produces valid ARMA forecasts.")
 
     print("\nportfolio.py completed successfully.")
+
+if __name__ == "__main__":
+    main()
