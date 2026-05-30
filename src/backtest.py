@@ -202,7 +202,164 @@ def simulate_all_strategies(strategies, returns,
         print(f"  Simulating {name} ...")
         sim_results[name] = simulate_strategy(w, returns, transaction_cost_bps)
     return sim_results
+# ── Step 5: Compute risk and performance metrics ───────────────────────────
+def compute_metrics(sim_df):
+    """
+    Compute Sharpe ratio, Max Drawdown, CAGR and Calmar ratio
+    for a single strategy's simulation DataFrame.
 
+    Conventions:
+      - Risk-free rate = 0 (standard for short backtests)
+      - Annualization factor: 252 trading days
+      - Returns are net of transaction costs
+
+    Args:
+        sim_df: output of simulate_strategy(), with 'net_return' and 'equity'.
+
+    Returns:
+        dict with keys: sharpe, max_drawdown, cagr, calmar.
+    """
+    net_ret = sim_df["net_return"].dropna()
+    equity  = sim_df["equity"].dropna()
+
+    # Sharpe ratio (annualized)
+    mean_daily = net_ret.mean()
+    std_daily  = net_ret.std()
+    sharpe = (mean_daily / std_daily) * np.sqrt(TRADING_DAYS)
+
+    # Max Drawdown: largest peak-to-trough loss
+    running_max = equity.cummax()
+    drawdown    = (equity - running_max) / running_max
+    max_dd      = drawdown.min()    # negative number, e.g. -0.30 = -30%
+
+    # CAGR: compound annual growth rate
+    n_days   = len(net_ret)
+    n_years  = n_days / TRADING_DAYS
+    cagr     = equity.iloc[-1] ** (1.0 / n_years) - 1.0
+
+    # Calmar ratio: CAGR per unit of drawdown
+    calmar = cagr / abs(max_dd) if max_dd < 0 else np.nan
+
+    return {
+        "sharpe":       sharpe,
+        "max_drawdown": max_dd,
+        "cagr":         cagr,
+        "calmar":       calmar,
+    }
+
+
+def compute_all_metrics(sim_results):
+    """
+    Compute metrics for every strategy and return a tidy DataFrame.
+
+    Rows = strategies, Columns = metrics.
+    """
+    rows = {name: compute_metrics(df) for name, df in sim_results.items()}
+    metrics_df = pd.DataFrame(rows).T
+    metrics_df.index.name = "strategy"
+    return metrics_df
+# ── Step 6: Stress period analysis ─────────────────────────────────────────
+def compute_stress_metrics(sim_df, start, end):
+    """
+    Compute performance metrics for a single strategy on a stress sub-period.
+
+    Differences vs compute_metrics():
+      - Total Return (NOT annualized) instead of CAGR, since extrapolating
+        a 2-month return to a yearly figure is misleading.
+      - Max Drawdown is computed WITHIN the window (local peaks/troughs).
+
+    Args:
+        sim_df: full backtest output for one strategy.
+        start, end: inclusive bounds of the stress window (e.g. "2020-03-01").
+
+    Returns:
+        dict with keys: total_return, vol_annual, sharpe, max_drawdown, n_days.
+    """
+    window = sim_df.loc[start:end]
+    if window.empty:
+        return None
+
+    net_ret = window["net_return"].dropna()
+    equity  = window["equity"].dropna()
+
+    # Total return over the period (NOT annualized)
+    total_return = equity.iloc[-1] / equity.iloc[0] - 1.0
+
+    # Annualized volatility and Sharpe ratio
+    vol_ann = net_ret.std() * np.sqrt(TRADING_DAYS)
+    sharpe  = (net_ret.mean() / net_ret.std()) * np.sqrt(TRADING_DAYS)
+
+    # Max Drawdown within the window
+    running_max = equity.cummax()
+    drawdown    = (equity - running_max) / running_max
+    max_dd      = drawdown.min()
+
+    return {
+        "total_return": total_return,
+        "vol_annual":   vol_ann,
+        "sharpe":       sharpe,
+        "max_drawdown": max_dd,
+        "n_days":       len(window),
+    }
+
+
+def compute_all_stress_metrics(sim_results, periods=STRESS_PERIODS):
+    """
+    Compute stress metrics for every strategy across every stress period.
+
+    Returns:
+        dict {period_name: DataFrame}, where each DataFrame has
+        strategies as rows and metrics as columns.
+    """
+    results = {}
+    for period_name, (start, end) in periods.items():
+        rows = {}
+        for strat_name, sim_df in sim_results.items():
+            metrics = compute_stress_metrics(sim_df, start, end)
+            if metrics is not None:
+                rows[strat_name] = metrics
+        df = pd.DataFrame(rows).T
+        df.index.name = "strategy"
+        results[period_name] = df
+    return results
+# ── Step 7: Save outputs ───────────────────────────────────────────────────
+def save_outputs(metrics_df, sim_results, stress_results,
+                 out_path=PROCESSED_PATH):
+    """
+    Save backtest results to CSV files for downstream use (LaTeX tables,
+    plotting, dashboards).
+
+    Files produced:
+      - backtest_results.csv: full-period metrics per strategy
+      - equity_curves.csv:    daily equity curve per strategy
+      - stress_<period>.csv:  one file per stress period with local metrics
+
+    Args:
+        metrics_df:     output of compute_all_metrics().
+        sim_results:    output of simulate_all_strategies().
+        stress_results: output of compute_all_stress_metrics().
+        out_path:       directory where to write the CSVs.
+    """
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    # 1. Full-period metrics
+    fp = out_path / "backtest_results.csv"
+    metrics_df.to_csv(fp)
+    print(f"Saved metrics       -> {fp}")
+
+    # 2. Equity curves (one column per strategy)
+    equity_df = pd.DataFrame(
+        {name: df["equity"] for name, df in sim_results.items()}
+    )
+    fp = out_path / "equity_curves.csv"
+    equity_df.to_csv(fp)
+    print(f"Saved equity curves -> {fp}  shape={equity_df.shape}")
+
+    # 3. Stress period results (one CSV per period)
+    for period_name, df in stress_results.items():
+        fp = out_path / f"stress_{period_name}.csv"
+        df.to_csv(fp)
+        print(f"Saved stress period -> {fp}")
 
 # ── Main orchestration ─────────────────────────────────────────────────────
 def main():
@@ -249,11 +406,40 @@ def main():
               f"total cost = {total_cost:.4f} | "
               f"avg daily turnover = {avg_turnov:.4f}")
 
-    # Step 5 (metrics) will be added here
-    # Step 6 (stress periods) will be added here
-    # Step 7 (output) will be added here
+    # ── Step 5: Compute risk and performance metrics ───────────────────────
+    print("\n--- Step 5: Computing risk and performance metrics ---\n")
+    metrics_df = compute_all_metrics(sim_results)
 
-    print("\n[Step 4] Simulation completed successfully.")
+    # Pretty print with percentages where appropriate
+    print(f"{'Strategy':30s} | {'Sharpe':>7s} | {'MaxDD':>8s} | "
+          f"{'CAGR':>7s} | {'Calmar':>7s}")
+    print("-" * 75)
+    for name, row in metrics_df.iterrows():
+        print(f"{name:30s} | {row['sharpe']:7.3f} | "
+              f"{row['max_drawdown']*100:7.2f}% | "
+              f"{row['cagr']*100:6.2f}% | {row['calmar']:7.3f}")
+
+    # ── Step 6: Stress period analysis ─────────────────────────────────────
+    print("\n--- Step 6: Stress period analysis ---")
+    stress_results = compute_all_stress_metrics(sim_results)
+
+    for period_name, df in stress_results.items():
+        start, end = STRESS_PERIODS[period_name]
+        print(f"\n{period_name}  ({start} -> {end})")
+        print("-" * 85)
+        print(f"{'Strategy':30s} | {'TotRet':>8s} | {'Vol(ann)':>9s} | "
+              f"{'Sharpe':>7s} | {'MaxDD':>8s}")
+        print("-" * 85)
+        for name, row in df.iterrows():
+            print(f"{name:30s} | {row['total_return']*100:7.2f}% | "
+                  f"{row['vol_annual']*100:8.2f}% | {row['sharpe']:7.3f} | "
+                  f"{row['max_drawdown']*100:7.2f}%")
+    # ── Step 7: Save outputs to CSV ────────────────────────────────────────
+    print("\n--- Step 7: Saving outputs ---\n")
+    save_outputs(metrics_df, sim_results, stress_results)
+    print("\n[Step 7] Outputs saved successfully. Backtest complete")
+    
+
 
 
 if __name__ == "__main__":
