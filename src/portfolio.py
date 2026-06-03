@@ -500,9 +500,7 @@ def main():
     # NOTE: at the time of writing, predictions_arma.csv contains only NaN
     # (forecasting.py ARMA pipeline issue, to be fixed upstream).
     # Once ARMA forecasts are valid, uncomment the line below.
-    # compute_method_a(model="arma")
-    print("\n[INFO] Skipping ARMA: predictions file contains only NaN. "
-          "Re-enable once forecasting.py produces valid ARMA forecasts.")
+    compute_method_a(model="arma")
 
     print("\nportfolio.py completed successfully.")
 

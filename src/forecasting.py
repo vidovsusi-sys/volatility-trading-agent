@@ -21,7 +21,7 @@ PROCESSED_PATH = Path("data/processed")
 # Walk-forward parameters
 MIN_TRAIN_DAYS = 500
 GAP_DAYS       = 5
-RETRAIN_FREQ   = 21       # Retrain every 21 days for both XGBoost and ARMA
+RETRAIN_FREQ   = 21
 BACKTEST_START = "2018-01-01"
 
 # XGBoost parameters
@@ -76,7 +76,6 @@ def walk_forward_xgboost(X, y_col, betas, min_train, gap, retrain_freq, backtest
         if train_end < min_train:
             continue
 
-        # Retrain every retrain_freq days
         if last_train_idx == -1 or (t - last_train_idx) >= retrain_freq:
             X_train = X.iloc[:train_end].dropna()
             y_train = betas[y_col].iloc[:train_end].loc[X_train.index]
@@ -109,32 +108,31 @@ def walk_forward_arma(betas_col, min_train, gap, backtest_start, retrain_freq):
         if train_end < min_train:
             continue
 
-        # Retrain every retrain_freq days
         if last_train_idx == -1 or (t - last_train_idx) >= retrain_freq:
             train_data = betas_col.iloc[:train_end].dropna()
             try:
                 model = ARIMA(train_data, order=(1, 0, 1))
                 model_result = model.fit()
                 last_train_idx = t
-            except Exception:
+            except Exception as e:
+                print(f"FIT ERROR {date}: {e}")
                 model_result = None
 
         try:
             if model_result is not None:
-                predictions[date] = model_result.forecast(steps=gap)[gap-1]
+                predictions[date] = model_result.forecast(steps=gap).iloc[-1]
             else:
                 predictions[date] = np.nan
-        except Exception:
+        except Exception as e:
+            print(f"FORECAST ERROR {date}: {e}")
             predictions[date] = np.nan
 
     return pd.Series(predictions, name=betas_col.name)
 
 
 def main():
-    # Load data
     betas, vrp = load_data()
 
-    # Build features
     print("\nBuilding features...")
     X = build_features(betas, vrp, LAGS)
 
@@ -146,21 +144,21 @@ def main():
             col = f"{ticker}_{param}"
             print(f"Forecasting {col}...")
 
-            # XGBoost
             xgb_predictions[col] = walk_forward_xgboost(
                 X, col, betas,
                 MIN_TRAIN_DAYS, GAP_DAYS, RETRAIN_FREQ,
                 BACKTEST_START, XGB_PARAMS
             )
 
-            # ARMA
             arma_predictions[col] = walk_forward_arma(
                 betas[col], MIN_TRAIN_DAYS, GAP_DAYS,
                 BACKTEST_START, RETRAIN_FREQ
             )
 
-    xgb_df  = pd.DataFrame(xgb_predictions)
-    arma_df = pd.DataFrame(arma_predictions)
+    xgb_df = pd.concat(xgb_predictions, axis=1)
+    xgb_df.columns = list(xgb_predictions.keys())
+    arma_df = pd.concat(arma_predictions, axis=1)
+    arma_df.columns = list(arma_predictions.keys())
 
     print(f"\nXGBoost predictions — Shape: {xgb_df.shape}")
     print(f"ARMA predictions    — Shape: {arma_df.shape}")
