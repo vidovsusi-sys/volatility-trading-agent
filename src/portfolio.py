@@ -497,9 +497,6 @@ def main():
     compute_method_c(model="xgboost")
 
     # Run for ARMA forecasts (benchmark used for RQ1)
-    # NOTE: at the time of writing, predictions_arma.csv contains only NaN
-    # (forecasting.py ARMA pipeline issue, to be fixed upstream).
-    # Once ARMA forecasts are valid, uncomment the line below.
     compute_method_a(model="arma")
 
     print("\nportfolio.py completed successfully.")

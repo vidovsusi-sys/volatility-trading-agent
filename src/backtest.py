@@ -125,12 +125,17 @@ def build_all_strategies(returns, vol_21, w_a, w_b, w_c, w_a_arma):
     strategies["Equal_Weighted"] = build_equal_weighted(dates)
     strategies["Historical_Risk_Parity"] = build_historical_risk_parity(
         vol_21, dates)
-    strategies["Method_A_XGBoost"] = w_a.reindex(dates)
-    strategies["Method_B_XGBoost"] = w_b.reindex(dates)
-    strategies["Method_C_XGBoost"] = w_c.reindex(dates).shift(1)
+
+    # Apply 5-day rolling mean to smooth weights and reduce daily turnover.
+    # This mimics weekly rebalancing — reducing transaction costs without
+    # losing the signal from the ML forecasts.
+    SMOOTH = 5
+    strategies["Method_A_XGBoost"] = w_a.reindex(dates).rolling(SMOOTH).mean().dropna()
+    strategies["Method_B_XGBoost"] = w_b.reindex(dates).rolling(SMOOTH).mean().dropna()
+    strategies["Method_C_XGBoost"] = w_c.reindex(dates).rolling(SMOOTH).mean().dropna()
 
     if w_a_arma is not None:
-        strategies["Method_A_ARMA"] = w_a_arma.reindex(dates)
+        strategies["Method_A_ARMA"] = w_a_arma.reindex(dates).rolling(SMOOTH).mean().dropna()
     else:
         print("[INFO] Method_A_ARMA skipped (NaN forecasts).")
 
