@@ -21,6 +21,8 @@ The key insight is that volatility has memory. If today's market is agitated, to
 **Requirements:** Python 3.10+, Git
 
 ```bash
+**Mac users — install this system dependency first (required for XGBoost):**
+brew install libomp
 git clone https://github.com/vidovsusi-sys/volatility-trading-agent.git
 cd volatility-trading-agent
 pip install -r requirements.txt
