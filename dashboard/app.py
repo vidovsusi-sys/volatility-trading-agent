@@ -46,12 +46,32 @@ STRATEGY_COLORS = {
     "Method_A_ARMA":          "#19D3F3",
 }
 
+STRATEGY_LABELS = {
+    "Equal_Weighted":         "Equal Weighted",
+    "Historical_Risk_Parity": "Historical Risk Parity",
+    "Method_A_XGBoost":       "Method A · XGBoost",
+    "Method_B_XGBoost":       "Method B · XGBoost",
+    "Method_C_XGBoost":       "Method C · XGBoost",
+    "Method_A_ARMA":          "Method A · ARMA",
+}
+
 # ── Page config ────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Volatility Trading Agent",
     page_icon="📈",
     layout="wide"
 )
+
+# ── Custom CSS ─────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-size: 1.3rem;
+        font-weight: 600;
+    }
+    footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
 
 # ── Data loaders ───────────────────────────────────────────────────────────
 @st.cache_data
@@ -169,7 +189,7 @@ def main():
         "🤖 AI Insights",
     ])
 
-    # ── Tab 1: Performance ──────────────────────────────────────────────────
+    # ── Tab 1: Performance ──────────────────────────────────────────────
     with tab1:
         st.header("Performance Metrics")
         st.markdown(
@@ -179,6 +199,9 @@ def main():
         )
 
         display_metrics = metrics.copy()
+        display_metrics["strategy"] = display_metrics["strategy"].map(
+            lambda s: STRATEGY_LABELS.get(s, s)
+        )
         display_metrics["max_drawdown"] = display_metrics["max_drawdown"].apply(
             lambda x: f"{x:.2%}"
         )
@@ -211,7 +234,7 @@ def main():
             fig.update_layout(showlegend=False, xaxis_tickangle=-45)
             st.plotly_chart(fig, use_container_width=True)
 
-    # ── Tab 2: Equity curves ────────────────────────────────────────────────
+    # ── Tab 2: Equity curves ────────────────────────────────────────────
     with tab2:
         st.header("Equity Curves")
         st.markdown("Portfolio value over time — starting from **1.0** (initial capital)")
@@ -219,10 +242,11 @@ def main():
         fig = go.Figure()
         for col in equity_curves.columns:
             color = STRATEGY_COLORS.get(col, "#888888")
+            label = STRATEGY_LABELS.get(col, col)
             fig.add_trace(go.Scatter(
                 x=equity_curves.index,
                 y=equity_curves[col],
-                name=col,
+                name=label,
                 line=dict(color=color, width=2)
             ))
 
@@ -231,11 +255,24 @@ def main():
             xaxis_title="Date",
             yaxis_title="Portfolio Value",
             hovermode="x unified",
-            height=500
+            height=550,
+            yaxis=dict(fixedrange=False),
+            xaxis=dict(
+                rangeslider=dict(visible=True),
+                rangeselector=dict(
+                    buttons=[
+                        dict(count=1, label="1M", step="month"),
+                        dict(count=6, label="6M", step="month"),
+                        dict(count=1, label="1Y", step="year"),
+                        dict(count=2, label="2Y", step="year"),
+                        dict(label="All", step="all"),
+                    ]
+                ),
+            ),
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # ── Tab 3: Portfolio weights ────────────────────────────────────────────
+    # ── Tab 3: Portfolio weights ────────────────────────────────────────
     with tab3:
         st.header("Portfolio Weights")
 
@@ -272,7 +309,7 @@ def main():
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # ── Tab 4: Stress periods ───────────────────────────────────────────────
+    # ── Tab 4: Stress periods ───────────────────────────────────────────
     with tab4:
         st.header("Stress Period Analysis")
         st.markdown("Performance during two major market dislocations.")
@@ -294,7 +331,7 @@ def main():
         fig.update_layout(showlegend=False, xaxis_tickangle=-45)
         st.plotly_chart(fig, use_container_width=True)
 
-    # ── Tab 5: AI Insights ──────────────────────────────────────────────────
+    # ── Tab 5: AI Insights ──────────────────────────────────────────────
     with tab5:
         st.header("🤖 AI Insights")
         st.markdown(
