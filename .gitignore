@@ -1,2 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
 
-src/__pycache__/
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+*.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# Credentials — NEVER commit
+*token*
+*secret*
+*api_key*
+
+# Large model files
+*.pkl
+*.joblib
+*.h5
+
+# Streamlit
+.streamlit/
