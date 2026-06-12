@@ -132,7 +132,7 @@ def build_all_strategies(returns, vol_21, w_a, w_b, w_c, w_a_arma):
     SMOOTH = 5
     strategies["Method_A_XGBoost"] = w_a.reindex(dates).rolling(SMOOTH).mean().dropna()
     strategies["Method_B_XGBoost"] = w_b.reindex(dates).rolling(SMOOTH).mean().dropna()
-    strategies["Method_C_XGBoost"] = w_c.reindex(dates).rolling(SMOOTH).mean().dropna()
+    strategies["Method_C_XGBoost"] = w_c.reindex(dates).rolling(SMOOTH).mean().shift(1).dropna()
 
     if w_a_arma is not None:
         strategies["Method_A_ARMA"] = w_a_arma.reindex(dates).rolling(SMOOTH).mean().dropna()
