@@ -2,14 +2,14 @@
 portfolio.py
 Compute portfolio weights using three different methods:
   - Method A: Risk Parity with forecasted B0
-  - Method B: Shape Trading with normalized B0, B1, B2     [TODO]
-  - Method C: Momentum / forecasted volatility              [TODO]
+  - Method B: Shape Trading with normalized B0, B1, B2     
+  - Method C: Momentum / forecasted volatility           
 
 Inputs:  data/processed/predictions_xgboost.csv (or predictions_arma.csv)
          data/raw/prices.csv (for Method C)
 Outputs: data/processed/weights_method_a.csv
-         data/processed/weights_method_b.csv [TODO]
-         data/processed/weights_method_c.csv [TODO]
+         data/processed/weights_method_b.csv 
+         data/processed/weights_method_c.csv 
 """
 
 import pandas as pd
