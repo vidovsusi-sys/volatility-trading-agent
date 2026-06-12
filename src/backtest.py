@@ -385,6 +385,10 @@ def main():
     weights_c_xgb  = load_weights("c", "xgboost")
     weights_a_arma = load_weights("a", "arma")
 
+    if weights_a_xgb is None or weights_b_xgb is None or weights_c_xgb is None:
+        print("ERROR: Missing XGBoost weights. Run portfolio.py first.")
+        return
+
     # ── Step 3: Build strategies ───────────────────────────────────────────
     print("\n--- Step 3: Building strategies ---\n")
     strategies, dates = build_all_strategies(
