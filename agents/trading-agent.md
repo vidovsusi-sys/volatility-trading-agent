@@ -19,10 +19,10 @@ Appends new row to results without rerunning full history.
 ## Actions
 1. Compute realized volatility on 6 horizons
 2. Fit Nelson-Siegel model — extract β0, β1, β2 per stock per day
-3. Forecast tomorrow's betas with XGBoost walk-forward
+3. Forecast tomorrow's betas with XGBoost walk-forward and ARMA walk-forward
 4. Compute portfolio weights — Method A, B, C
-5. Run backtesting — compare 5 strategies with transaction costs
-6. Save results to `outputs/backtesting/` and plots to `outputs/plots/`
+5. Run backtesting — compare 6 strategies with transaction costs
+6. Save results to `data/processed/` and plots to `outputs/figures/`
 7. Open a Pull Request on GitHub with results summary
 
 ## MUST NOT
